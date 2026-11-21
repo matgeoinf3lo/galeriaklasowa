@@ -10,11 +10,14 @@
 <body>
   <header class="topbar">
     <div class="topbar-inner">
-      <div>
-        <h1>Galeria Klasowa</h1>
-        <p class="subtitle">Wydarzenia, zdjęcia i szybkie wrzucanie z telefonu</p>
+      <div class="brand">
+        <span class="brand-badge">KLASA</span>
+        <div>
+          <h1>Galeria Klasowa</h1>
+          <p class="subtitle">Wydarzenia, zdjęcia i szybkie wrzucanie z telefonu</p>
+        </div>
       </div>
-      <button id="openModalBtn" class="btn btn-primary">+ Nowy folder</button>
+      <button id="openNewFolderBtn" class="btn btn-primary">+ Nowy folder</button>
     </div>
   </header>
 
@@ -26,15 +29,15 @@
   </main>
 
   <!-- Modal dodawania nowego folderu -->
-  <div id="folderModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-    <div class="modal-backdrop" id="closeModalBackdrop"></div>
+  <div id="newFolderModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="newFolderTitle">
+    <div class="modal-backdrop" data-close="newFolderModal"></div>
     <div class="modal-card">
       <div class="modal-header">
-        <h2 id="modalTitle">Nowy folder / wydarzenie</h2>
-        <button id="closeModalBtn" class="icon-btn" aria-label="Zamknij">✕</button>
+        <h2 id="newFolderTitle">Nowy folder / wydarzenie</h2>
+        <button class="icon-btn" data-close="newFolderModal" aria-label="Zamknij">✕</button>
       </div>
 
-      <form id="folderForm" class="form-grid">
+      <form id="newFolderForm" class="form-grid">
         <label class="field">
           <span>Nazwa wydarzenia / folderu</span>
           <input type="text" id="folderName" placeholder="np. Wyjście integracyjne" required />
@@ -47,15 +50,43 @@
 
         <label class="field">
           <span>Zdjęcia (możesz wybrać kilka)</span>
-          <input type="file" id="folderFiles" accept="image/*" multiple required />
-          <small class="hint">Zdjęcia zostaną automatycznie zmniejszone (max 1600 px) i skompresowane do JPG.</small>
+          <input type="file" id="newFolderFiles" accept="image/*" multiple required />
+          <small class="hint">Automatyczna kompresja do max 1600 px i lekkiego JPG.</small>
         </label>
 
-        <div id="uploadProgress" class="upload-progress hidden"></div>
+        <div id="newFolderProgress" class="upload-progress hidden"></div>
 
         <div class="modal-actions">
-          <button type="button" id="cancelModalBtn" class="btn btn-ghost">Anuluj</button>
-          <button type="submit" id="submitFolderBtn" class="btn btn-primary">Wyślij i utwórz</button>
+          <button type="button" class="btn btn-ghost" data-close="newFolderModal">Anuluj</button>
+          <button type="submit" id="submitNewFolderBtn" class="btn btn-primary">Wyślij i utwórz</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal dodawania zdjęć do istniejącego folderu -->
+  <div id="addPhotosModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="addPhotosTitle">
+    <div class="modal-backdrop" data-close="addPhotosModal"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="addPhotosTitle">Dodaj zdjęcia do folderu</h2>
+        <button class="icon-btn" data-close="addPhotosModal" aria-label="Zamknij">✕</button>
+      </div>
+
+      <form id="addPhotosForm" class="form-grid">
+        <p id="targetFolderLabel" class="target-folder-pill"></p>
+
+        <label class="field">
+          <span>Wybierz zdjęcia z telefonu lub dysku</span>
+          <input type="file" id="addPhotosFiles" accept="image/*" multiple required />
+          <small class="hint">Zdjęcia zostaną skompresowane i dopisane do tego folderu.</small>
+        </label>
+
+        <div id="addPhotosProgress" class="upload-progress hidden"></div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close="addPhotosModal">Anuluj</button>
+          <button type="submit" id="submitAddPhotosBtn" class="btn btn-primary">Dodaj zdjęcia</button>
         </div>
       </form>
     </div>
@@ -69,7 +100,10 @@
       <img id="lbImg" src="" alt="" />
       <div class="lb-bar">
         <div id="lbCaption" class="lb-caption"></div>
-        <a id="lbDownload" class="btn btn-primary btn-sm" download>Pobierz</a>
+        <div class="lb-actions">
+          <a id="lbDownload" class="btn btn-primary btn-sm" download>Pobierz</a>
+          <button id="lbDelete" type="button" class="btn btn-danger btn-sm">Usuń</button>
+        </div>
       </div>
     </div>
     <button id="lbNext" class="lb-nav lb-next" aria-label="Następne zdjęcie">›</button>
