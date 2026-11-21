@@ -419,12 +419,6 @@ h1 {
   gap: 10px;
 }
 
-/* Ankiety */
-.polls-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 18px;
-}
 
 @media (max-width: 500px) {
   .polls-grid {
