@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hub Klasowy — Galeria i Ankiety</title>
+  <title>Hub Klasowy — matGEOinf</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
@@ -16,10 +16,10 @@
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand">
-        <div class="brand-mark">III LO // MAT-INF</div>
+        <div class="brand-mark">III LO // matGEOinf</div>
         <div>
           <h1>Hub Klasowy</h1>
-          <p class="subtitle">Archiwum zdjęć po miesiącach i szybkie ankiety dla klasy</p>
+          <p class="subtitle">Zdjęcia po miesiącach i wydarzeniach • szybkie wrzucanie z telefonu</p>
         </div>
       </div>
 
@@ -48,8 +48,16 @@
           <div id="monthFilters" class="chips-row"></div>
         </div>
         <div class="filter-group">
-          <span class="filter-label">Wydarzenie:</span>
+          <span class="filter-label">Folder / Typ:</span>
           <div id="folderFilters" class="chips-row"></div>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">Sortowanie:</span>
+          <div id="sortControls" class="chips-row">
+            <button type="button" class="chip active" data-sort="newest">Najnowsze miesiące/daty</button>
+            <button type="button" class="chip" data-sort="oldest">Najstarsze</button>
+            <button type="button" class="chip" data-sort="most-photos">Najwięcej zdjęć</button>
+          </div>
         </div>
       </div>
 
@@ -71,19 +79,35 @@
     <div class="modal-backdrop" data-close="newFolderModal"></div>
     <div class="modal-card">
       <div class="modal-header">
-        <h2 id="newFolderTitle">Nowy folder / wydarzenie</h2>
+        <h2 id="newFolderTitle">Nowy folder</h2>
         <button class="icon-btn" data-close="newFolderModal" aria-label="Zamknij">✕</button>
       </div>
 
       <form id="newFolderForm" class="form-grid">
-        <label class="field">
-          <span>Nazwa wydarzenia</span>
-          <input type="text" id="folderName" placeholder="np. Wyjście na pizzę / Wigilia klasowa" required />
-        </label>
+        <div class="mode-switch">
+          <button type="button" class="mode-btn active" data-mode="month">Tylko miesiąc i rok (np. lekcje)</button>
+          <button type="button" class="mode-btn" data-mode="event">Konkretny dzień / wydarzenie</button>
+        </div>
 
         <label class="field">
-          <span>Data wydarzenia (wyznacza miesiąc i rocznik)</span>
-          <input type="date" id="folderDate" required />
+          <span id="folderNameLabel">Nazwa folderu (np. Lekcje / różne z miesiąca)</span>
+          <input type="text" id="folderName" placeholder="np. Lekcje / różne" required />
+        </label>
+
+        <div id="monthOnlyInputs" class="two-cols">
+          <label class="field">
+            <span>Miesiąc</span>
+            <select id="folderMonthSelect"></select>
+          </label>
+          <label class="field">
+            <span>Rocznik / Rok</span>
+            <input type="number" id="folderYearInput" min="2020" max="2035" step="1" required />
+          </label>
+        </div>
+
+        <label class="field hidden" id="exactDateField">
+          <span>Konkretna data wydarzenia</span>
+          <input type="date" id="folderDate" />
         </label>
 
         <label class="field">
