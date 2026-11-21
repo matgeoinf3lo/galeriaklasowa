@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Galeria Klasowa</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div>
+        <h1>Galeria Klasowa</h1>
+        <p class="subtitle">Wydarzenia, zdjęcia i szybkie wrzucanie z telefonu</p>
+      </div>
+      <button id="openModalBtn" class="btn btn-primary">+ Nowy folder</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="filters-bar" id="filtersBar" aria-label="Filtry wydarzeń"></section>
+
+    <div id="statusMsg" class="status-msg">Ładowanie galerii...</div>
+    <div id="galleryContainer" class="gallery-sections"></div>
+  </main>
+
+  <!-- Modal dodawania nowego folderu -->
+  <div id="folderModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-backdrop" id="closeModalBackdrop"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="modalTitle">Nowy folder / wydarzenie</h2>
+        <button id="closeModalBtn" class="icon-btn" aria-label="Zamknij">✕</button>
+      </div>
+
+      <form id="folderForm" class="form-grid">
+        <label class="field">
+          <span>Nazwa wydarzenia / folderu</span>
+          <input type="text" id="folderName" placeholder="np. Wyjście integracyjne" required />
+        </label>
+
+        <label class="field">
+          <span>Data wydarzenia</span>
+          <input type="date" id="folderDate" required />
+        </label>
+
+        <label class="field">
+          <span>Zdjęcia (możesz wybrać kilka)</span>
+          <input type="file" id="folderFiles" accept="image/*" multiple required />
+          <small class="hint">Zdjęcia zostaną automatycznie zmniejszone (max 1600 px) i skompresowane do JPG.</small>
+        </label>
+
+        <div id="uploadProgress" class="upload-progress hidden"></div>
+
+        <div class="modal-actions">
+          <button type="button" id="cancelModalBtn" class="btn btn-ghost">Anuluj</button>
+          <button type="submit" id="submitFolderBtn" class="btn btn-primary">Wyślij i utwórz</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Lightbox podglądu zdjęcia -->
+  <div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true">
+    <button id="lbClose" class="lb-close" aria-label="Zamknij podgląd">✕</button>
+    <button id="lbPrev" class="lb-nav lb-prev" aria-label="Poprzednie zdjęcie">‹</button>
+    <div class="lb-content">
+      <img id="lbImg" src="" alt="" />
+      <div class="lb-bar">
+        <div id="lbCaption" class="lb-caption"></div>
+        <a id="lbDownload" class="btn btn-primary btn-sm" download>Pobierz</a>
+      </div>
+    </div>
+    <button id="lbNext" class="lb-nav lb-next" aria-label="Następne zdjęcie">›</button>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
