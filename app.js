@@ -9,6 +9,7 @@ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let folders = [];
 let photos = [];
 let activeFolderId = "all";
+let targetFolderForAdd = null;
 let flatPhotosList = [];
 let currentLightboxIdx = 0;
 
@@ -17,49 +18,73 @@ const filtersBar = document.getElementById("filtersBar");
 const galleryContainer = document.getElementById("galleryContainer");
 const statusMsg = document.getElementById("statusMsg");
 
-const folderModal = document.getElementById("folderModal");
-const openModalBtn = document.getElementById("openModalBtn");
-const closeModalBtn = document.getElementById("closeModalBtn");
-const cancelModalBtn = document.getElementById("cancelModalBtn");
-const closeModalBackdrop = document.getElementById("closeModalBackdrop");
-const folderForm = document.getElementById("folderForm");
+// Nowy folder
+const openNewFolderBtn = document.getElementById("openNewFolderBtn");
+const newFolderForm = document.getElementById("newFolderForm");
 const folderNameInput = document.getElementById("folderName");
 const folderDateInput = document.getElementById("folderDate");
-const folderFilesInput = document.getElementById("folderFiles");
-const uploadProgress = document.getElementById("uploadProgress");
-const submitFolderBtn = document.getElementById("submitFolderBtn");
+const newFolderFilesInput = document.getElementById("newFolderFiles");
+const newFolderProgress = document.getElementById("newFolderProgress");
+const submitNewFolderBtn = document.getElementById("submitNewFolderBtn");
 
+// Dodawanie zdjęć do istniejącego folderu
+const addPhotosForm = document.getElementById("addPhotosForm");
+const targetFolderLabel = document.getElementById("targetFolderLabel");
+const addPhotosFilesInput = document.getElementById("addPhotosFiles");
+const addPhotosProgress = document.getElementById("addPhotosProgress");
+const submitAddPhotosBtn = document.getElementById("submitAddPhotosBtn");
+
+// Lightbox
 const lightbox = document.getElementById("lightbox");
 const lbImg = document.getElementById("lbImg");
 const lbCaption = document.getElementById("lbCaption");
 const lbDownload = document.getElementById("lbDownload");
+const lbDelete = document.getElementById("lbDelete");
 const lbClose = document.getElementById("lbClose");
 const lbPrev = document.getElementById("lbPrev");
 const lbNext = document.getElementById("lbNext");
 
-// Ustaw domyślną datę na dzisiaj
-folderDateInput.value = new Date().toISOString().split("T")[0];
+const todayStr = () => new Date().toISOString().split("T")[0];
+folderDateInput.value = todayStr();
 
-// Modal
-function openModal() {
-  folderModal.classList.remove("hidden");
+function openModal(id) {
+  document.getElementById(id).classList.remove("hidden");
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.add("hidden");
+  if (id === "newFolderModal") {
+    newFolderProgress.classList.add("hidden");
+    newFolderProgress.textContent = "";
+    newFolderForm.reset();
+    folderDateInput.value = todayStr();
+  } else if (id === "addPhotosModal") {
+    addPhotosProgress.classList.add("hidden");
+    addPhotosProgress.textContent = "";
+    addPhotosForm.reset();
+    targetFolderForAdd = null;
+  }
+}
+
+openNewFolderBtn.addEventListener("click", () => {
+  openModal("newFolderModal");
   folderNameInput.focus();
+});
+
+document.querySelectorAll("[data-close]").forEach((el) => {
+  el.addEventListener("click", () => closeModal(el.dataset.close));
+});
+
+function openAddPhotosModal(folder) {
+  targetFolderForAdd = folder;
+  targetFolderLabel.textContent = `Folder: ${folder.nazwa} (${folder.data_wydarzenia})`;
+  addPhotosProgress.classList.add("hidden");
+  addPhotosProgress.textContent = "";
+  addPhotosForm.reset();
+  openModal("addPhotosModal");
 }
 
-function closeModal() {
-  folderModal.classList.add("hidden");
-  uploadProgress.classList.add("hidden");
-  uploadProgress.textContent = "";
-  folderForm.reset();
-  folderDateInput.value = new Date().toISOString().split("T")[0];
-}
-
-openModalBtn.addEventListener("click", openModal);
-closeModalBtn.addEventListener("click", closeModal);
-cancelModalBtn.addEventListener("click", closeModal);
-closeModalBackdrop.addEventListener("click", closeModal);
-
-// Kompresja obrazu w przeglądarce przed wysyłką
+// Kompresja obrazu w przeglądarce
 function compressImage(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -101,21 +126,59 @@ function compressImage(file) {
   });
 }
 
-// Dodawanie nowego folderu i zdjęć
-folderForm.addEventListener("submit", async (e) => {
+// Wyciąga ścieżkę pliku w buckecie z publicznego URL Supabase
+function extractStoragePath(publicUrl) {
+  if (!publicUrl) return null;
+  const marker = `/object/public/${BUCKET_NAME}/`;
+  const idx = publicUrl.indexOf(marker);
+  if (idx === -1) return null;
+  return decodeURIComponent(publicUrl.slice(idx + marker.length).split("?")[0]);
+}
+
+// Wysyłka listy plików do wskazanego folderu
+async function uploadFilesToFolder(folderId, files, progressEl) {
+  for (let i = 0; i < files.length; i++) {
+    progressEl.textContent = `Kompresja i wysyłanie ${i + 1} z ${files.length}...`;
+
+    const compressedBlob = await compressImage(files[i]);
+    const filePath = `${folderId}/${Date.now()}_${i}_${Math.random().toString(36).slice(2, 7)}.jpg`;
+
+    const { error: uploadErr } = await db.storage
+      .from(BUCKET_NAME)
+      .upload(filePath, compressedBlob, {
+        contentType: "image/jpeg",
+        upsert: false,
+      });
+
+    if (uploadErr) throw uploadErr;
+
+    const { data: publicUrlData } = db.storage
+      .from(BUCKET_NAME)
+      .getPublicUrl(filePath);
+
+    const { error: photoErr } = await db
+      .from("zdjecia")
+      .insert([{ folder_id: folderId, url: publicUrlData.publicUrl }]);
+
+    if (photoErr) throw photoErr;
+  }
+}
+
+// Tworzenie nowego folderu + zdjęć
+newFolderForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 
   const name = folderNameInput.value.trim();
   const eventDate = folderDateInput.value;
-  const files = Array.from(folderFilesInput.files || []);
+  const files = Array.from(newFolderFilesInput.files || []);
 
   if (!name || !eventDate || files.length === 0) return;
 
-  submitFolderBtn.disabled = true;
-  uploadProgress.classList.remove("hidden");
+  submitNewFolderBtn.disabled = true;
+  newFolderProgress.classList.remove("hidden");
 
   try {
-    uploadProgress.textContent = "Tworzenie folderu w bazie...";
+    newFolderProgress.textContent = "Tworzenie folderu...";
 
     const { data: createdFolder, error: folderErr } = await db
       .from("foldery")
@@ -125,44 +188,106 @@ folderForm.addEventListener("submit", async (e) => {
 
     if (folderErr) throw folderErr;
 
-    for (let i = 0; i < files.length; i++) {
-      uploadProgress.textContent = `Kompresja i wysyłanie zdjęcia ${i + 1} z ${files.length}...`;
+    await uploadFilesToFolder(createdFolder.id, files, newFolderProgress);
 
-      const compressedBlob = await compressImage(files[i]);
-      const filePath = `${createdFolder.id}/${Date.now()}_${i}.jpg`;
-
-      const { error: uploadErr } = await db.storage
-        .from(BUCKET_NAME)
-        .upload(filePath, compressedBlob, {
-          contentType: "image/jpeg",
-          upsert: false,
-        });
-
-      if (uploadErr) throw uploadErr;
-
-      const { data: publicUrlData } = db.storage
-        .from(BUCKET_NAME)
-        .getPublicUrl(filePath);
-
-      const { error: photoErr } = await db
-        .from("zdjecia")
-        .insert([{ folder_id: createdFolder.id, url: publicUrlData.publicUrl }]);
-
-      if (photoErr) throw photoErr;
-    }
-
-    uploadProgress.textContent = "Gotowe! Odświeżam galerię...";
+    newFolderProgress.textContent = "Gotowe! Odświeżam galerię...";
     await loadGallery();
-    closeModal();
+    closeModal("newFolderModal");
   } catch (err) {
     console.error(err);
-    uploadProgress.textContent = `Błąd: ${err.message || "coś poszło nie tak"}`;
+    newFolderProgress.textContent = `Błąd: ${err.message || "coś poszło nie tak"}`;
   } finally {
-    submitFolderBtn.disabled = false;
+    submitNewFolderBtn.disabled = false;
   }
 });
 
-// Pobieranie folderów i zdjęć
+// Dorzucanie zdjęć do istniejącego folderu
+addPhotosForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!targetFolderForAdd) return;
+
+  const files = Array.from(addPhotosFilesInput.files || []);
+  if (files.length === 0) return;
+
+  submitAddPhotosBtn.disabled = true;
+  addPhotosProgress.classList.remove("hidden");
+
+  try {
+    await uploadFilesToFolder(targetFolderForAdd.id, files, addPhotosProgress);
+    addPhotosProgress.textContent = "Dodano zdjęcia! Odświeżam...";
+    await loadGallery();
+    closeModal("addPhotosModal");
+  } catch (err) {
+    console.error(err);
+    addPhotosProgress.textContent = `Błąd: ${err.message || "coś poszło nie tak"}`;
+  } finally {
+    submitAddPhotosBtn.disabled = false;
+  }
+});
+
+// Usuwanie pojedynczego zdjęcia
+async function deletePhoto(photo) {
+  const ok = confirm("Na pewno usunąć to zdjęcie?");
+  if (!ok) return;
+
+  try {
+    const storagePath = extractStoragePath(photo.url);
+    if (storagePath) {
+      await db.storage.from(BUCKET_NAME).remove([storagePath]);
+    }
+
+    const { error } = await db.from("zdjecia").delete().eq("id", photo.id);
+    if (error) throw error;
+
+    closeLightbox();
+    await loadGallery();
+  } catch (err) {
+    alert(`Nie udało się usunąć zdjęcia: ${err.message}`);
+  }
+}
+
+// Usuwanie całego folderu wraz ze zdjęciami
+async function deleteFolder(folder) {
+  const folderPhotos = photos.filter((p) => p.folder_id === folder.id);
+  const ok = confirm(
+    `Usunąć folder „${folder.nazwa}” (${folderPhotos.length} zdjęć)? Tej operacji nie da się cofnąć.`
+  );
+  if (!ok) return;
+
+  try {
+    const pathsToRemove = folderPhotos
+      .map((p) => extractStoragePath(p.url))
+      .filter(Boolean);
+
+    if (pathsToRemove.length > 0) {
+      await db.storage.from(BUCKET_NAME).remove(pathsToRemove);
+    }
+
+    if (folderPhotos.length > 0) {
+      const { error: delPhotosErr } = await db
+        .from("zdjecia")
+        .delete()
+        .eq("folder_id", folder.id);
+      if (delPhotosErr) throw delPhotosErr;
+    }
+
+    const { error: delFolderErr } = await db
+      .from("foldery")
+      .delete()
+      .eq("id", folder.id);
+    if (delFolderErr) throw delFolderErr;
+
+    if (activeFolderId === folder.id) {
+      activeFolderId = "all";
+    }
+
+    await loadGallery();
+  } catch (err) {
+    alert(`Nie udało się usunąć folderu: ${err.message}`);
+  }
+}
+
+// Ładowanie danych
 async function loadGallery() {
   statusMsg.classList.remove("hidden");
   statusMsg.textContent = "Ładowanie galerii...";
@@ -233,7 +358,8 @@ function renderGallery() {
 
   if (visibleFolders.length === 0) {
     statusMsg.classList.remove("hidden");
-    statusMsg.textContent = "Nie ma jeszcze żadnych folderów. Kliknij „+ Nowy folder”, żeby dodać pierwsze zdjęcia.";
+    statusMsg.textContent =
+      "Nie ma jeszcze żadnych folderów. Kliknij „+ Nowy folder”, żeby dodać pierwsze zdjęcia.";
     return;
   }
 
@@ -248,6 +374,7 @@ function renderGallery() {
     const header = document.createElement("div");
     header.className = "folder-header";
 
+    const titleWrap = document.createElement("div");
     const title = document.createElement("h2");
     title.className = "folder-title";
     title.textContent = folder.nazwa;
@@ -256,14 +383,35 @@ function renderGallery() {
     meta.className = "folder-meta";
     meta.textContent = `${folder.data_wydarzenia} • ${folderPhotos.length} zdjęć`;
 
-    header.appendChild(title);
-    header.appendChild(meta);
+    titleWrap.appendChild(title);
+    titleWrap.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.className = "folder-actions";
+
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "btn btn-secondary btn-sm";
+    addBtn.textContent = "+ Dodaj zdjęcia";
+    addBtn.addEventListener("click", () => openAddPhotosModal(folder));
+
+    const delFolderBtn = document.createElement("button");
+    delFolderBtn.type = "button";
+    delFolderBtn.className = "btn btn-danger btn-sm";
+    delFolderBtn.textContent = "Usuń folder";
+    delFolderBtn.addEventListener("click", () => deleteFolder(folder));
+
+    actions.appendChild(addBtn);
+    actions.appendChild(delFolderBtn);
+
+    header.appendChild(titleWrap);
+    header.appendChild(actions);
     section.appendChild(header);
 
     if (folderPhotos.length === 0) {
       const empty = document.createElement("p");
       empty.className = "hint";
-      empty.textContent = "Brak zdjęć w tym folderze.";
+      empty.textContent = "Brak zdjęć w tym folderze — kliknij „+ Dodaj zdjęcia”.";
       section.appendChild(empty);
     } else {
       const grid = document.createElement("div");
@@ -271,10 +419,13 @@ function renderGallery() {
 
       folderPhotos.forEach((photo, idx) => {
         const globalIndex = flatPhotosList.length;
+        const filename = `${folder.data_wydarzenia}_${folder.nazwa}_${idx + 1}.jpg`.replace(/\s+/g, "_");
+
         flatPhotosList.push({
+          photo,
           url: photo.url,
           caption: `${folder.data_wydarzenia} — ${folder.nazwa} (${idx + 1}/${folderPhotos.length})`,
-          filename: `${folder.data_wydarzenia}_${folder.nazwa}_${idx + 1}.jpg`.replace(/\s+/g, "_"),
+          filename,
         });
 
         const card = document.createElement("div");
@@ -286,15 +437,31 @@ function renderGallery() {
         img.loading = "lazy";
         img.addEventListener("click", () => openLightbox(globalIndex));
 
+        const overlay = document.createElement("div");
+        overlay.className = "photo-overlay-actions";
+
         const dlBtn = document.createElement("a");
-        dlBtn.className = "photo-dl-btn";
+        dlBtn.className = "photo-chip-btn";
         dlBtn.href = photo.url;
-        dlBtn.download = `${folder.data_wydarzenia}_${folder.nazwa}_${idx + 1}.jpg`.replace(/\s+/g, "_");
+        dlBtn.download = filename;
         dlBtn.textContent = "Pobierz";
         dlBtn.addEventListener("click", (ev) => ev.stopPropagation());
 
+        const delPhotoBtn = document.createElement("button");
+        delPhotoBtn.type = "button";
+        delPhotoBtn.className = "photo-chip-btn danger";
+        delPhotoBtn.textContent = "✕";
+        delPhotoBtn.title = "Usuń zdjęcie";
+        delPhotoBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          deletePhoto(photo);
+        });
+
+        overlay.appendChild(dlBtn);
+        overlay.appendChild(delPhotoBtn);
+
         card.appendChild(img);
-        card.appendChild(dlBtn);
+        card.appendChild(overlay);
         grid.appendChild(card);
       });
 
@@ -324,6 +491,7 @@ function updateLightbox() {
   lbCaption.textContent = item.caption;
   lbDownload.href = item.url;
   lbDownload.download = item.filename;
+  lbDelete.onclick = () => deletePhoto(item.photo);
 }
 
 function prevPhoto() {
