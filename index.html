@@ -3,32 +3,70 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Galeria Klasowa</title>
+  <title>Hub Klasowy — Galeria i Ankiety</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+  <div class="bg-grid" aria-hidden="true"></div>
+
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand">
-        <span class="brand-badge">KLASA</span>
+        <div class="brand-mark">III LO // MAT-INF</div>
         <div>
-          <h1>Galeria Klasowa</h1>
-          <p class="subtitle">Wydarzenia, zdjęcia i szybkie wrzucanie z telefonu</p>
+          <h1>Hub Klasowy</h1>
+          <p class="subtitle">Archiwum zdjęć po miesiącach i szybkie ankiety dla klasy</p>
         </div>
       </div>
-      <button id="openNewFolderBtn" class="btn btn-primary">+ Nowy folder</button>
+
+      <nav class="nav-tabs" aria-label="Główne zakładki">
+        <button id="tabGalleryBtn" class="nav-tab active" data-tab="gallery">
+          Galeria <span id="galleryCountBadge" class="badge">0</span>
+        </button>
+        <button id="tabPollsBtn" class="nav-tab" data-tab="polls">
+          Ankiety <span id="pollsCountBadge" class="badge">0</span>
+        </button>
+      </nav>
+
+      <div class="header-cta">
+        <button id="openNewFolderBtn" class="btn btn-primary">+ Nowy folder</button>
+        <button id="openNewPollBtn" class="btn btn-primary hidden">+ Nowa ankieta</button>
+      </div>
     </div>
   </header>
 
   <main class="container">
-    <section class="filters-bar" id="filtersBar" aria-label="Filtry wydarzeń"></section>
+    <!-- ZAKŁADKA: GALERIA -->
+    <section id="galleryView">
+      <div class="controls-panel">
+        <div class="filter-group">
+          <span class="filter-label">Miesiąc / Rok:</span>
+          <div id="monthFilters" class="chips-row"></div>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">Wydarzenie:</span>
+          <div id="folderFilters" class="chips-row"></div>
+        </div>
+      </div>
 
-    <div id="statusMsg" class="status-msg">Ładowanie galerii...</div>
-    <div id="galleryContainer" class="gallery-sections"></div>
+      <div id="galleryStatus" class="status-box">Ładowanie galerii...</div>
+      <div id="galleryContainer" class="months-stack"></div>
+    </section>
+
+    <!-- ZAKŁADKA: ANKIETY -->
+    <section id="pollsView" class="hidden">
+      <div id="pollsStatus" class="status-box">Ładowanie ankiet...</div>
+      <div id="pollsContainer" class="polls-grid"></div>
+    </section>
   </main>
 
-  <!-- Modal dodawania nowego folderu -->
+  <div id="toast" class="toast hidden" role="status"></div>
+
+  <!-- MODAL: NOWY FOLDER -->
   <div id="newFolderModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="newFolderTitle">
     <div class="modal-backdrop" data-close="newFolderModal"></div>
     <div class="modal-card">
@@ -39,22 +77,22 @@
 
       <form id="newFolderForm" class="form-grid">
         <label class="field">
-          <span>Nazwa wydarzenia / folderu</span>
-          <input type="text" id="folderName" placeholder="np. Wyjście integracyjne" required />
+          <span>Nazwa wydarzenia</span>
+          <input type="text" id="folderName" placeholder="np. Wyjście na pizzę / Wigilia klasowa" required />
         </label>
 
         <label class="field">
-          <span>Data wydarzenia</span>
+          <span>Data wydarzenia (wyznacza miesiąc i rocznik)</span>
           <input type="date" id="folderDate" required />
         </label>
 
         <label class="field">
-          <span>Zdjęcia (możesz wybrać kilka)</span>
+          <span>Zdjęcia (możesz zaznaczyć wiele)</span>
           <input type="file" id="newFolderFiles" accept="image/*" multiple required />
           <small class="hint">Automatyczna kompresja do max 1600 px i lekkiego JPG.</small>
         </label>
 
-        <div id="newFolderProgress" class="upload-progress hidden"></div>
+        <div id="newFolderProgress" class="progress-box hidden"></div>
 
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" data-close="newFolderModal">Anuluj</button>
@@ -64,7 +102,7 @@
     </div>
   </div>
 
-  <!-- Modal dodawania zdjęć do istniejącego folderu -->
+  <!-- MODAL: DODAJ ZDJĘCIA DO ISTNIEJĄCEGO FOLDERU -->
   <div id="addPhotosModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="addPhotosTitle">
     <div class="modal-backdrop" data-close="addPhotosModal"></div>
     <div class="modal-card">
@@ -74,15 +112,15 @@
       </div>
 
       <form id="addPhotosForm" class="form-grid">
-        <p id="targetFolderLabel" class="target-folder-pill"></p>
+        <div id="targetFolderBanner" class="info-banner"></div>
 
         <label class="field">
-          <span>Wybierz zdjęcia z telefonu lub dysku</span>
+          <span>Wybierz zdjęcia</span>
           <input type="file" id="addPhotosFiles" accept="image/*" multiple required />
-          <small class="hint">Zdjęcia zostaną skompresowane i dopisane do tego folderu.</small>
+          <small class="hint">Każde zdjęcie zostanie skompresowane przed wysłaniem.</small>
         </label>
 
-        <div id="addPhotosProgress" class="upload-progress hidden"></div>
+        <div id="addPhotosProgress" class="progress-box hidden"></div>
 
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" data-close="addPhotosModal">Anuluj</button>
@@ -92,7 +130,50 @@
     </div>
   </div>
 
-  <!-- Lightbox podglądu zdjęcia -->
+  <!-- MODAL: NOWA ANKIETA -->
+  <div id="newPollModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="newPollTitle">
+    <div class="modal-backdrop" data-close="newPollModal"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="newPollTitle">Nowa ankieta dla klasy</h2>
+        <button class="icon-btn" data-close="newPollModal" aria-label="Zamknij">✕</button>
+      </div>
+
+      <form id="newPollForm" class="form-grid">
+        <label class="field">
+          <span>Pytanie / temat od wychowawcy</span>
+          <input type="text" id="pollTitle" placeholder="np. Kto jedzie na wyjazd we wtorek? / Rozmiar bluzy" required />
+        </label>
+
+        <label class="field">
+          <span>Dodatkowe info (opcjonalnie)</span>
+          <input type="text" id="pollDesc" placeholder="np. Odpowiedzcie do jutra do 18:00" />
+        </label>
+
+        <label class="field">
+          <span>Rodzaj odpowiedzi</span>
+          <select id="pollType">
+            <option value="wybor">Wybór z gotowych opcji</option>
+            <option value="tekst">Własna odpowiedź tekstowa</option>
+          </select>
+        </label>
+
+        <label class="field" id="pollOptionsField">
+          <span>Opcje (każda w nowej linii)</span>
+          <textarea id="pollOptions" rows="4" placeholder="Tak, jadę&#10;Nie jadę&#10;Jeszcze nie wiem"></textarea>
+        </label>
+
+        <div id="newPollProgress" class="progress-box hidden"></div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close="newPollModal">Anuluj</button>
+          <button type="submit" id="submitNewPollBtn" class="btn btn-primary">Utwórz ankietę</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- LIGHTBOX -->
   <div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true">
     <button id="lbClose" class="lb-close" aria-label="Zamknij podgląd">✕</button>
     <button id="lbPrev" class="lb-nav lb-prev" aria-label="Poprzednie zdjęcie">‹</button>
