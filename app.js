@@ -21,6 +21,7 @@ let activeFolderId = "all";
 let sortMode = "newest"; // "newest" | "oldest" | "most-photos"
 let folderCreateMode = "month"; // "month" | "event"
 let targetFolderForAdd = null;
+let targetFolderForRename = null;
 let flatPhotosList = [];
 let currentLightboxIdx = 0;
 
@@ -45,6 +46,13 @@ const folderDateInput = document.getElementById("folderDate");
 const newFolderFilesInput = document.getElementById("newFolderFiles");
 const newFolderProgress = document.getElementById("newFolderProgress");
 const submitNewFolderBtn = document.getElementById("submitNewFolderBtn");
+
+// Modal zmiany nazwy folderu
+const renameFolderForm = document.getElementById("renameFolderForm");
+const renameFolderMeta = document.getElementById("renameFolderMeta");
+const renameFolderInput = document.getElementById("renameFolderInput");
+const renameFolderProgress = document.getElementById("renameFolderProgress");
+const submitRenameFolderBtn = document.getElementById("submitRenameFolderBtn");
 
 // Modal dodawania zdjęć
 const addPhotosForm = document.getElementById("addPhotosForm");
@@ -121,7 +129,6 @@ function showToast(message) {
   showToast._timer = setTimeout(() => toastEl.classList.add("hidden"), 2300);
 }
 
-// Pobieranie zdjęcia przez Blob (działa pewnie na telefonach i z zewnętrznego URL)
 async function downloadPhotoFile(url, filename) {
   try {
     showToast("Pobieranie zdjęcia...");
@@ -180,6 +187,10 @@ function closeModal(id) {
     newFolderProgress.classList.add("hidden");
     newFolderForm.reset();
     resetFolderFormDefaults();
+  } else if (id === "renameFolderModal") {
+    renameFolderProgress.classList.add("hidden");
+    renameFolderForm.reset();
+    targetFolderForRename = null;
   } else if (id === "addPhotosModal") {
     addPhotosProgress.classList.add("hidden");
     addPhotosForm.reset();
@@ -195,6 +206,51 @@ openNewFolderBtn.addEventListener("click", () => {
 
 document.querySelectorAll("[data-close]").forEach((el) => {
   el.addEventListener("click", () => closeModal(el.dataset.close));
+});
+
+function openRenameFolderModal(folder) {
+  targetFolderForRename = folder;
+  const info = parseFolderDateInfo(folder.data_wydarzenia);
+  const dateText = info.isMonthOnly ? `${info.label} (cały miesiąc)` : `${folder.data_wydarzenia} (${info.label})`;
+  renameFolderMeta.textContent = `${dateText}`;
+  renameFolderInput.value = folder.nazwa;
+  renameFolderProgress.classList.add("hidden");
+  openModal("renameFolderModal");
+  renameFolderInput.focus();
+  renameFolderInput.select();
+}
+
+renameFolderForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!targetFolderForRename) return;
+
+  const newName = renameFolderInput.value.trim();
+  if (!newName) return;
+
+  if (newName === targetFolderForRename.nazwa) {
+    closeModal("renameFolderModal");
+    return;
+  }
+
+  submitRenameFolderBtn.disabled = true;
+  renameFolderProgress.classList.remove("hidden");
+  renameFolderProgress.textContent = "Zapisywanie nowej nazwy...";
+
+  try {
+    const { error } = await db
+      .from("foldery")
+      .update({ nazwa: newName })
+      .eq("id", targetFolderForRename.id);
+    if (error) throw error;
+
+    await loadGallery();
+    closeModal("renameFolderModal");
+    showToast("Zmieniono nazwę folderu!");
+  } catch (err) {
+    renameFolderProgress.textContent = `Błąd: ${err.message}`;
+  } finally {
+    submitRenameFolderBtn.disabled = false;
+  }
 });
 
 function openAddPhotosModal(folder) {
@@ -633,13 +689,19 @@ function renderGallery() {
       addBtn.textContent = "+ Dodaj zdjęcia";
       addBtn.addEventListener("click", () => openAddPhotosModal(folder));
 
+      const renameBtn = document.createElement("button");
+      renameBtn.type = "button";
+      renameBtn.className = "btn btn-ghost btn-sm";
+      renameBtn.textContent = "Zmień nazwę";
+      renameBtn.addEventListener("click", () => openRenameFolderModal(folder));
+
       const delBtn = document.createElement("button");
       delBtn.type = "button";
       delBtn.className = "btn btn-danger btn-sm";
       delBtn.textContent = "Usuń";
       delBtn.addEventListener("click", () => deleteFolder(folder));
 
-      actions.append(addBtn, delBtn);
+      actions.append(addBtn, renameBtn, delBtn);
       top.append(infoBox, actions);
       card.appendChild(top);
 
