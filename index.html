@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Galeria Klasowa — matGEOinf</title>
+  <title>Galeria Klasowa - MatGeoInf</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
@@ -102,6 +102,33 @@
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" data-close="newFolderModal">Anuluj</button>
           <button type="submit" id="submitNewFolderBtn" class="btn btn-primary">Wyślij i utwórz</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: EDYCJA NAZWY FOLDERU -->
+  <div id="renameFolderModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="renameFolderTitle">
+    <div class="modal-backdrop" data-close="renameFolderModal"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="renameFolderTitle">Zmień nazwę folderu</h2>
+        <button class="icon-btn" data-close="renameFolderModal" aria-label="Zamknij">✕</button>
+      </div>
+
+      <form id="renameFolderForm" class="form-grid">
+        <div id="renameFolderMeta" class="info-banner"></div>
+
+        <label class="field">
+          <span>Nowa nazwa folderu</span>
+          <input type="text" id="renameFolderInput" required />
+        </label>
+
+        <div id="renameFolderProgress" class="progress-box hidden"></div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close="renameFolderModal">Anuluj</button>
+          <button type="submit" id="submitRenameFolderBtn" class="btn btn-primary">Zapisz nazwę</button>
         </div>
       </form>
     </div>
