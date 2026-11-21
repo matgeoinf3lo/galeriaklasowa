@@ -3,6 +3,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_rjWKhm-Vncfz0QbGreX_Wg_gTkeCfye";
 const BUCKET_NAME = "zdjecia";
 const MAX_DIMENSION = 1600;
 const JPEG_QUALITY = 0.82;
+const PAGE_SIZE = 1000;
 
 const POLISH_MONTHS = [
   "Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec",
@@ -13,6 +14,7 @@ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let folders = [];
 let photos = [];
+let photosByFolder = new Map();
 
 let activeMonthKey = "all";
 let activeFolderId = "all";
@@ -71,6 +73,13 @@ POLISH_MONTHS.forEach((mName, idx) => {
   folderMonthSelect.appendChild(opt);
 });
 
+function sanitizeFilename(name) {
+  return String(name ?? "zdjecie")
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 80);
+}
+
 function resetFolderFormDefaults() {
   folderMonthSelect.value = String(now.getMonth() + 1).padStart(2, "0");
   folderYearInput.value = String(now.getFullYear());
@@ -112,17 +121,40 @@ function showToast(message) {
   showToast._timer = setTimeout(() => toastEl.classList.add("hidden"), 2300);
 }
 
-// Sortowanie
+// Pobieranie zdjęcia przez Blob (działa pewnie na telefonach i z zewnętrznego URL)
+async function downloadPhotoFile(url, filename) {
+  try {
+    showToast("Pobieranie zdjęcia...");
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Błąd pobierania pliku");
+
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+
+    const tempLink = document.createElement("a");
+    tempLink.href = blobUrl;
+    tempLink.download = filename || "zdjecie.jpg";
+    document.body.appendChild(tempLink);
+    tempLink.click();
+    tempLink.remove();
+
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
+    showToast("Pobrano!");
+  } catch (err) {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+}
+
 sortControlsEl.querySelectorAll("[data-sort]").forEach((btn) => {
   btn.addEventListener("click", () => {
     sortMode = btn.dataset.sort;
     sortControlsEl.querySelectorAll("[data-sort]").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
+    renderFilters();
     renderGallery();
   });
 });
 
-// Parsowanie daty: dzień "01" oznacza folder tylko po miesiącu i roku
 function parseFolderDateInfo(dateStr) {
   if (!dateStr) {
     return { key: "brak", label: "Bez daty", isMonthOnly: false, fullDate: "" };
@@ -138,7 +170,6 @@ function parseFolderDateInfo(dateStr) {
   };
 }
 
-// Modale
 function openModal(id) {
   document.getElementById(id).classList.remove("hidden");
 }
@@ -169,14 +200,15 @@ document.querySelectorAll("[data-close]").forEach((el) => {
 function openAddPhotosModal(folder) {
   targetFolderForAdd = folder;
   const info = parseFolderDateInfo(folder.data_wydarzenia);
-  const dateText = info.isMonthOnly ? `${info.label} (cały miesiąc)` : `${folder.data_wydarzenia} (${info.label})`;
+  const dateText = info.isMonthOnly
+    ? `${info.label} (cały miesiąc)`
+    : `${folder.data_wydarzenia} (${info.label})`;
   targetFolderBanner.textContent = `${folder.nazwa} • ${dateText}`;
   addPhotosProgress.classList.add("hidden");
   addPhotosForm.reset();
   openModal("addPhotosModal");
 }
 
-// Kompresja obrazu w przeglądarce
 function compressImage(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -218,6 +250,13 @@ function extractStoragePath(publicUrl) {
   const idx = publicUrl.indexOf(marker);
   if (idx === -1) return null;
   return decodeURIComponent(publicUrl.slice(idx + marker.length).split("?")[0]);
+}
+
+async function removeStoragePathsInChunks(paths, chunkSize = 100) {
+  for (let i = 0; i < paths.length; i += chunkSize) {
+    const chunk = paths.slice(i, i + chunkSize);
+    await db.storage.from(BUCKET_NAME).remove(chunk);
+  }
 }
 
 async function uploadFilesToFolder(folderId, files, progressEl) {
@@ -321,16 +360,18 @@ async function deletePhoto(photo) {
 }
 
 async function deleteFolder(folder) {
-  const folderPhotos = photos.filter((p) => p.folder_id === folder.id);
+  const folderPhotos = photosByFolder.get(folder.id) || [];
   if (!confirm(`Usunąć folder „${folder.nazwa}” (${folderPhotos.length} zdjęć)?`)) return;
 
   try {
     const paths = folderPhotos.map((p) => extractStoragePath(p.url)).filter(Boolean);
-    if (paths.length) await db.storage.from(BUCKET_NAME).remove(paths);
+    if (paths.length) await removeStoragePathsInChunks(paths);
+
     if (folderPhotos.length) {
       const { error } = await db.from("zdjecia").delete().eq("folder_id", folder.id);
       if (error) throw error;
     }
+
     const { error: fErr } = await db.from("foldery").delete().eq("id", folder.id);
     if (fErr) throw fErr;
 
@@ -342,53 +383,103 @@ async function deleteFolder(folder) {
   }
 }
 
+async function fetchAllRows(table, orderCol1, asc1, orderCol2 = null, asc2 = false) {
+  let all = [];
+  let from = 0;
+
+  while (true) {
+    let query = db.from(table).select("*").order(orderCol1, { ascending: asc1 });
+    if (orderCol2) {
+      query = query.order(orderCol2, { ascending: asc2 });
+    }
+    const { data, error } = await query.range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+
+    const batch = data || [];
+    all = all.concat(batch);
+
+    if (batch.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+
+  return all;
+}
+
+function rebuildPhotoIndex() {
+  photosByFolder = new Map();
+  for (const p of photos) {
+    if (!photosByFolder.has(p.folder_id)) {
+      photosByFolder.set(p.folder_id, []);
+    }
+    photosByFolder.get(p.folder_id).push(p);
+  }
+}
+
 async function loadGallery() {
   galleryStatusEl.classList.remove("hidden");
   galleryStatusEl.textContent = "Ładowanie galerii...";
 
-  const [fRes, pRes] = await Promise.all([
-    db.from("foldery").select("*").order("data_wydarzenia", { ascending: false }).order("utworzono", { ascending: false }),
-    db.from("zdjecia").select("*").order("utworzono", { ascending: true }),
-  ]);
+  try {
+    const [fData, pData] = await Promise.all([
+      fetchAllRows("foldery", "data_wydarzenia", false, "utworzono", false),
+      fetchAllRows("zdjecia", "utworzono", true),
+    ]);
 
-  if (fRes.error || pRes.error) {
-    galleryStatusEl.textContent = `Błąd ładowania: ${(fRes.error || pRes.error).message}`;
-    return;
+    folders = fData;
+    photos = pData;
+    rebuildPhotoIndex();
+
+    renderFilters();
+    renderGallery();
+  } catch (err) {
+    galleryStatusEl.classList.remove("hidden");
+    galleryStatusEl.textContent = `Błąd ładowania: ${err.message}`;
+  }
+}
+
+function compareFolders(a, b) {
+  const dateA = a.data_wydarzenia || "";
+  const dateB = b.data_wydarzenia || "";
+
+  if (sortMode === "oldest") {
+    const cmp = dateA.localeCompare(dateB);
+    return cmp !== 0 ? cmp : (a.utworzono || "").localeCompare(b.utworzono || "");
   }
 
-  folders = fRes.data || [];
-  photos = pRes.data || [];
+  if (sortMode === "most-photos") {
+    const countA = (photosByFolder.get(a.id) || []).length;
+    const countB = (photosByFolder.get(b.id) || []).length;
+    if (countB !== countA) return countB - countA;
+    const cmp = dateB.localeCompare(dateA);
+    return cmp !== 0 ? cmp : (b.utworzono || "").localeCompare(a.utworzono || "");
+  }
 
-  renderFilters();
-  renderGallery();
+  const cmp = dateB.localeCompare(dateA);
+  return cmp !== 0 ? cmp : (b.utworzono || "").localeCompare(a.utworzono || "");
 }
 
 function getSortedFolders(list) {
-  const copy = [...list];
-  if (sortMode === "oldest") {
-    return copy.sort((a, b) => (a.data_wydarzenia || "").localeCompare(b.data_wydarzenia || ""));
-  }
-  if (sortMode === "most-photos") {
-    const countMap = new Map();
-    folders.forEach((f) => {
-      countMap.set(f.id, photos.filter((p) => p.folder_id === f.id).length);
-    });
-    return copy.sort((a, b) => (countMap.get(b.id) || 0) - (countMap.get(a.id) || 0));
-  }
-  return copy.sort((a, b) => (b.data_wydarzenia || "").localeCompare(a.data_wydarzenia || ""));
+  return [...list].sort(compareFolders);
 }
 
 function renderFilters() {
   monthFiltersEl.innerHTML = "";
   folderFiltersEl.innerHTML = "";
 
+  const sortedAll = getSortedFolders(folders);
   const monthMap = new Map();
-  getSortedFolders(folders).forEach((f) => {
+
+  sortedAll.forEach((f) => {
     const info = parseFolderDateInfo(f.data_wydarzenia);
     if (!monthMap.has(info.key)) {
       monthMap.set(info.key, info.label);
     }
   });
+
+  if (activeMonthKey !== "all" && !monthMap.has(activeMonthKey)) {
+    activeMonthKey = "all";
+    activeFolderId = "all";
+  }
 
   const allMonthsBtn = document.createElement("button");
   allMonthsBtn.className = `chip ${activeMonthKey === "all" ? "active" : ""}`;
@@ -414,9 +505,13 @@ function renderFilters() {
     monthFiltersEl.appendChild(btn);
   });
 
-  const candidateFolders = getSortedFolders(folders).filter((f) => {
+  const candidateFolders = sortedAll.filter((f) => {
     return activeMonthKey === "all" || parseFolderDateInfo(f.data_wydarzenia).key === activeMonthKey;
   });
+
+  if (activeFolderId !== "all" && !candidateFolders.some((f) => f.id === activeFolderId)) {
+    activeFolderId = "all";
+  }
 
   const allFoldersBtn = document.createElement("button");
   allFoldersBtn.className = `chip ${activeFolderId === "all" ? "active" : ""}`;
@@ -429,7 +524,7 @@ function renderFilters() {
   folderFiltersEl.appendChild(allFoldersBtn);
 
   candidateFolders.forEach((f) => {
-    const count = photos.filter((p) => p.folder_id === f.id).length;
+    const count = (photosByFolder.get(f.id) || []).length;
     const info = parseFolderDateInfo(f.data_wydarzenia);
     const btn = document.createElement("button");
     btn.className = `chip ${activeFolderId === f.id ? "active" : ""}`;
@@ -470,27 +565,34 @@ function renderGallery() {
     groupedByMonth.get(info.key).folders.push(folder);
   });
 
+  const fragment = document.createDocumentFragment();
+
   groupedByMonth.forEach((group) => {
     const monthBlock = document.createElement("div");
     monthBlock.className = "month-block";
 
     const monthPhotosCount = group.folders.reduce(
-      (sum, f) => sum + photos.filter((p) => p.folder_id === f.id).length,
+      (sum, f) => sum + (photosByFolder.get(f.id) || []).length,
       0
     );
 
     const monthHeader = document.createElement("div");
     monthHeader.className = "month-header";
-    monthHeader.innerHTML = `
-      <h2 class="month-heading">
-        ${group.label}
-        <span class="month-pill">${group.folders.length} folderów · ${monthPhotosCount} zdjęć</span>
-      </h2>
-    `;
+
+    const monthHeading = document.createElement("h2");
+    monthHeading.className = "month-heading";
+    monthHeading.textContent = group.label;
+
+    const monthPill = document.createElement("span");
+    monthPill.className = "month-pill";
+    monthPill.textContent = `${group.folders.length} folderów · ${monthPhotosCount} zdjęć`;
+
+    monthHeading.appendChild(monthPill);
+    monthHeader.appendChild(monthHeading);
     monthBlock.appendChild(monthHeader);
 
     group.folders.forEach((folder) => {
-      const folderPhotos = photos.filter((p) => p.folder_id === folder.id);
+      const folderPhotos = photosByFolder.get(folder.id) || [];
       const info = parseFolderDateInfo(folder.data_wydarzenia);
       const card = document.createElement("article");
       card.className = "folder-card";
@@ -499,17 +601,28 @@ function renderGallery() {
       top.className = "folder-top";
 
       const infoBox = document.createElement("div");
-      const subLabel = info.isMonthOnly
+      const titleRow = document.createElement("div");
+      titleRow.className = "folder-title-row";
+
+      const h3 = document.createElement("h3");
+      h3.className = "folder-title";
+      h3.textContent = folder.nazwa;
+      titleRow.appendChild(h3);
+
+      if (info.isMonthOnly) {
+        const tag = document.createElement("span");
+        tag.className = "tag-month-only";
+        tag.textContent = "Tylko miesiąc";
+        titleRow.appendChild(tag);
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "folder-meta";
+      meta.textContent = info.isMonthOnly
         ? `Cały miesiąc: ${info.label} • ${folderPhotos.length} zdjęć`
         : `${folder.data_wydarzenia} • ${folderPhotos.length} zdjęć`;
 
-      infoBox.innerHTML = `
-        <div class="folder-title-row">
-          <h3 class="folder-title">${folder.nazwa}</h3>
-          ${info.isMonthOnly ? `<span class="tag-month-only">Tylko miesiąc</span>` : ""}
-        </div>
-        <div class="folder-meta">${subLabel}</div>
-      `;
+      infoBox.append(titleRow, meta);
 
       const actions = document.createElement("div");
       actions.className = "folder-actions";
@@ -541,7 +654,9 @@ function renderGallery() {
 
         folderPhotos.forEach((photo, idx) => {
           const globalIdx = flatPhotosList.length;
-          const filename = `${info.key}_${folder.nazwa}_${idx + 1}.jpg`.replace(/\s+/g, "_");
+          const safeFolder = sanitizeFilename(folder.nazwa);
+          const filename = `${info.key}_${safeFolder}_${idx + 1}.jpg`;
+
           flatPhotosList.push({
             photo,
             url: photo.url,
@@ -556,17 +671,20 @@ function renderGallery() {
           img.src = photo.url;
           img.alt = folder.nazwa;
           img.loading = "lazy";
+          img.decoding = "async";
           img.addEventListener("click", () => openLightbox(globalIdx));
 
           const bar = document.createElement("div");
           bar.className = "tile-bar";
 
-          const dl = document.createElement("a");
+          const dl = document.createElement("button");
+          dl.type = "button";
           dl.className = "tile-btn";
-          dl.href = photo.url;
-          dl.download = filename;
           dl.textContent = "Pobierz";
-          dl.addEventListener("click", (e) => e.stopPropagation());
+          dl.addEventListener("click", (e) => {
+            e.stopPropagation();
+            downloadPhotoFile(photo.url, filename);
+          });
 
           const rm = document.createElement("button");
           rm.type = "button";
@@ -589,8 +707,10 @@ function renderGallery() {
       monthBlock.appendChild(card);
     });
 
-    galleryContainerEl.appendChild(monthBlock);
+    fragment.appendChild(monthBlock);
   });
+
+  galleryContainerEl.appendChild(fragment);
 }
 
 // Lightbox
@@ -610,8 +730,7 @@ function updateLightbox() {
   if (!item) return;
   lbImg.src = item.url;
   lbCaption.textContent = item.caption;
-  lbDownload.href = item.url;
-  lbDownload.download = item.filename;
+  lbDownload.onclick = () => downloadPhotoFile(item.url, item.filename);
   lbDelete.onclick = () => deletePhoto(item.photo);
 }
 
